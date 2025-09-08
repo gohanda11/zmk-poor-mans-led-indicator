@@ -1,7 +1,6 @@
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/led.h>
-#include <zephyr/drivers/led_strip.h>
 #include <zephyr/kernel.h>
 #include <zephyr/init.h>
 
@@ -24,25 +23,11 @@ do { \
     blink.sequence_len = LENGTH(seq); \
 } while(0)
 
-#define SET_BLINK_COLOR(clr) \
-do { \
-    blink.color = clr; \
-} while(0)
-
 #define BLINK_STRUCT(seq, num_repeats) \
     (struct blink_item) { \
         .sequence = seq, \
         .sequence_len = LENGTH(seq), \
-        .n_repeats = num_repeats, \
-        .color = COLOR_WHITE \
-    }
-
-#define BLINK_STRUCT_COLOR(seq, num_repeats, clr) \
-    (struct blink_item) { \
-        .sequence = seq, \
-        .sequence_len = LENGTH(seq), \
-        .n_repeats = num_repeats, \
-        .color = clr \
+        .n_repeats = num_repeats \
     }
 
 static const uint16_t CONFIG_INDICATOR_LED_LAYER_PATTERN[] = {80, 120};
@@ -60,27 +45,14 @@ static const uint16_t STAY_ON[] = {10};
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
-// LED Strip device for WS2812/SK6812
-#if DT_NODE_EXISTS(DT_CHOSEN(zmk_underglow))
-#define LED_STRIP_NODE DT_CHOSEN(zmk_underglow)
-static const struct device *led_dev = DEVICE_DT_GET(LED_STRIP_NODE);
-static const bool use_led_strip = true;
-#else
-// Fallback to GPIO LED
 #define LED_GPIO_NODE_ID DT_COMPAT_GET_ANY_STATUS_OKAY(gpio_leds)
+
+// GPIO-based LED device and indices of LED inside its DT node
 static const struct device *led_dev = DEVICE_DT_GET(LED_GPIO_NODE_ID);
+
 BUILD_ASSERT(DT_NODE_EXISTS(DT_ALIAS(indicator_led)),
              "An alias for indicator-led is not found for INDICATOR_LED");
 static const uint8_t led_idx = DT_NODE_CHILD_IDX(DT_ALIAS(indicator_led));
-static const bool use_led_strip = false;
-#endif
-
-// RGB color structure for WS2812/SK6812 (moved up for struct blink_item)
-struct rgb_color {
-    uint8_t r;
-    uint8_t g; 
-    uint8_t b;
-};
 
 // flag to indicate whether the initial boot up sequence is complete
 static bool initialized = false;
@@ -90,7 +62,6 @@ struct blink_item {
     const uint16_t *sequence;
     size_t sequence_len;
     uint8_t n_repeats;
-    struct rgb_color color; // Add color information
 };
 
 
@@ -98,49 +69,16 @@ struct blink_item {
 // Max 6 sequences; more in queue will be dropped.
 K_MSGQ_DEFINE(led_msgq, sizeof(struct blink_item), 6, 1);
 
-// Color definitions
-static const struct rgb_color COLOR_OFF = {0, 0, 0};
-static const struct rgb_color COLOR_RED = {255, 0, 0};
-static const struct rgb_color COLOR_GREEN = {0, 255, 0};
-static const struct rgb_color COLOR_BLUE = {0, 0, 255};
-static const struct rgb_color COLOR_YELLOW = {255, 255, 0};
-static const struct rgb_color COLOR_WHITE = {255, 255, 255};
-
-// Set LED color - support both LED strip and GPIO LED
-static void set_led_color(struct rgb_color color) {
-    if (use_led_strip) {
-        // Use LED strip for WS2812/SK6812
-        struct led_rgb led_color = {.r = color.r, .g = color.g, .b = color.b};
-        led_strip_update_rgb(led_dev, &led_color, 1);
-    } else {
-        // Use GPIO LED (simple on/off)
-        if (color.r > 0 || color.g > 0 || color.b > 0) {
-            led_on(led_dev, led_idx);
-        } else {
-            led_off(led_dev, led_idx);
-        }
-    }
-}
-
-// Turn LED off
-static void led_off_func(void) {
-    if (use_led_strip) {
-        set_led_color(COLOR_OFF);
-    } else {
-        led_off(led_dev, led_idx);
-    }
-}
-
 static void led_do_blink(struct blink_item blink) {
-    led_off_func();
+    led_off(led_dev, led_idx);
     k_sleep(K_MSEC(200));
     for (int n = 0; n < blink.n_repeats; n++) {
         for (int i = 0; i < blink.sequence_len; i++) {
             // on for evens (0 == start, off for odds. If the sequence contains an odd number, will stay on.
             if (i%2 == 0){
-                set_led_color(blink.color); // Use color from blink item
+                led_on(led_dev, led_idx);
             } else {
-                led_off_func();
+                led_off(led_dev, led_idx);
             }
             uint16_t blink_time = blink.sequence[i];
             k_sleep(K_MSEC(blink_time));
@@ -157,17 +95,14 @@ static void indicate_ble(void) {
     if (zmk_ble_active_profile_is_connected()) {
         LOG_INF("Profile %d connected, blinking for connected", profile_index);
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BLE_PROFILE_CONNECTED_PATTERN);
-        SET_BLINK_COLOR(COLOR_BLUE);  // Blue for connected
         blink.n_repeats = profile_index;
     } else if (zmk_ble_active_profile_is_open()) {
         LOG_INF("Profile %d open, blinking for open", profile_index);
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BLE_PROFILE_OPEN_PATTERN);
-        SET_BLINK_COLOR(COLOR_YELLOW);  // Yellow for advertising/open
         blink.n_repeats = profile_index;
     } else {
         LOG_INF("Profile %d not connected, blinking for unconnected", profile_index);
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_PROFILE_UNCONNECTED_PATTERN);
-        SET_BLINK_COLOR(COLOR_RED);  // Red for disconnected
         blink.n_repeats = profile_index;
     }
     k_msgq_put(&led_msgq, &blink, K_NO_WAIT);
@@ -178,12 +113,10 @@ static void indicate_ble(void) {
     if (zmk_split_bt_peripheral_is_connected()) {
         LOG_INF("Peripheral connected, blinking once");
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BLE_PROFILE_CONNECTED_PATTERN);
-        SET_BLINK_COLOR(COLOR_BLUE);  // Blue for connected
         blink.n_repeats = 1;
     } else {
         LOG_INF("Peripheral not connected, blinking for unconnected");
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_PROFILE_UNCONNECTED_PATTERN);
-        SET_BLINK_COLOR(COLOR_RED);  // Red for disconnected
         blink.n_repeats = 10;
     }
     k_msgq_put(&led_msgq, &blink, K_NO_WAIT);
@@ -226,8 +159,8 @@ static int led_battery_listener_cb(const zmk_event_t *eh) {
     if (battery_level > 0 && battery_level <= CONFIG_INDICATOR_LED_BATTERY_LEVEL_CRITICAL) {
         LOG_INF("Battery level %d, blinking for critical", battery_level);
 
-        static const struct blink_item blink = BLINK_STRUCT_COLOR(
-            CONFIG_INDICATOR_LED_BATTERY_CRITICAL_PATTERN, 1, COLOR_RED
+        static const struct blink_item blink = BLINK_STRUCT(
+            CONFIG_INDICATOR_LED_BATTERY_CRITICAL_PATTERN, 1
         );
         k_msgq_put(&led_msgq, &blink, K_NO_WAIT);
     }
@@ -258,17 +191,14 @@ static void indicate_startup_battery(void) {
     } else if (battery_level >= CONFIG_INDICATOR_LED_BATTERY_LEVEL_HIGH) {
         LOG_INF("Startup Battery level %d, blinking for high", battery_level);
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BATTERY_HIGH_PATTERN);
-        SET_BLINK_COLOR(COLOR_GREEN);  // Green for high battery
         blink.n_repeats = CONFIG_INDICATOR_LED_BATTERY_HIGH_BLINK_REPEAT;
     } else if (battery_level <= CONFIG_INDICATOR_LED_BATTERY_LEVEL_CRITICAL){
         LOG_INF("Startup Battery level %d, blinking for critical", battery_level);
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BATTERY_CRITICAL_PATTERN);
-        SET_BLINK_COLOR(COLOR_RED);  // Red for critical battery
         blink.n_repeats = CONFIG_INDICATOR_LED_BATTERY_CRITICAL_BLINK_REPEAT;
     } else if (battery_level <= CONFIG_INDICATOR_LED_BATTERY_LEVEL_LOW) {
         LOG_INF("Startup Battery level %d, blinking for low", battery_level);
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BATTERY_LOW_PATTERN);
-        SET_BLINK_COLOR(COLOR_YELLOW);  // Yellow for low battery
         blink.n_repeats = CONFIG_INDICATOR_LED_BATTERY_LOW_BLINK_REPEAT;
     } else {
         blink.n_repeats = 0;
@@ -295,26 +225,14 @@ static int led_layer_listener_cb(const zmk_event_t *eh) {
 
     uint8_t index = zmk_keymap_highest_layer_active()+1;
     LOG_INF("Changed to layer %d", index);
-    
-    // Get color based on layer
-    struct rgb_color layer_color;
-    switch (zmk_keymap_highest_layer_active()) {
-        case 0: layer_color = COLOR_WHITE; break;   // Layer 0 - White
-        case 1: layer_color = COLOR_RED; break;     // Layer 1 - Red  
-        case 2: layer_color = COLOR_GREEN; break;   // Layer 2 - Green
-        case 3: layer_color = COLOR_BLUE; break;    // Layer 3 - Blue
-        case 4: layer_color = COLOR_YELLOW; break;  // Layer 4 - Yellow
-        default: layer_color = COLOR_WHITE; break;  // Default - White
-    }
-    
-    struct blink_item blink = BLINK_STRUCT_COLOR(
-        CONFIG_INDICATOR_LED_LAYER_PATTERN, index, layer_color
+    struct blink_item blink = BLINK_STRUCT(
+        CONFIG_INDICATOR_LED_LAYER_PATTERN, index
     );
     k_msgq_put(&led_msgq, &blink, K_NO_WAIT);
     if (zmk_keymap_highest_layer_active() >=
         CONFIG_INDICATOR_LED_LAYER_PERSISTENCE_THRESHOLD) {
-        blink = BLINK_STRUCT_COLOR(
-            STAY_ON, 1, layer_color
+        blink = BLINK_STRUCT(
+            STAY_ON, 1
         );
         k_msgq_put(&led_msgq, &blink, K_NO_WAIT);
 
