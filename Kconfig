@@ -1,0 +1,64 @@
+config INDICATOR_LED_WIDGET
+    bool "Enable RGB LED widget for showing battery and output status"
+
+if INDICATOR_LED_WIDGET
+
+config LED
+    default y
+
+config INDICATOR_LED_SHOW_LAYER_CHANGE
+    bool "Indicate highest active layer on each layer change with a sequence of blinks"
+        default y
+
+config INDICATOR_LED_LAYER_PERSISTENCE_THRESHOLD
+    int "At which layer number (starting from 0) should the LED stay lit after its blink sequence, to indicate a non-default layer is still active."
+        default 200
+
+config INDICATOR_LED_SHOW_BATTERY_ON_BOOT
+    bool "Indicate battery level on startup with a sequence of blinks"
+        default y
+
+config CONFIG_INDICATOR_LED_SHOW_CRITICAL_BATTERY_CHANGES
+    bool "Blink once every time battery level changes when below critical level"
+        default y
+
+config INDICATOR_LED_SHOW_BLE
+    bool "Indicate BLE status on startup and profile change with a sequence of blinks"
+        default y
+
+config INDICATOR_LED_SHOW_PERIPHERAL_BLE
+    bool "Indicate on the peripheral half of a split what its connection status is, with a sequence of blinks."
+        default y
+    depends on INDICATOR_LED_SHOW_BLE
+        help
+            Requires INDICATOR_LED_SHOW_BLE to be enabled.
+
+config INDICATOR_LED_INTERVAL_MS
+    int "Minimum wait duration between blink sequences in ms"
+    default 500
+
+config INDICATOR_LED_BATTERY_LEVEL_HIGH
+    int "High battery level percentage"
+    default 80
+
+config INDICATOR_LED_BATTERY_LEVEL_LOW
+    int "Low battery level percentage"
+    default 20
+
+config INDICATOR_LED_BATTERY_LEVEL_CRITICAL
+    int "Critical battery level percentage"
+    default 5
+
+config INDICATOR_LED_BATTERY_HIGH_BLINK_REPEAT
+    int "High battery level blink repeat count"
+    default 2
+
+config INDICATOR_LED_BATTERY_LOW_BLINK_REPEAT
+    int "Low battery level blink repeat count"
+    default 4
+
+config INDICATOR_LED_BATTERY_CRITICAL_BLINK_REPEAT
+    int "Critical battery level blink repeat count"
+    default 6
+
+endif

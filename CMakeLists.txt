@@ -1,0 +1,1 @@
+target_sources_ifdef(CONFIG_INDICATOR_LED_WIDGET app PRIVATE leds.c)
