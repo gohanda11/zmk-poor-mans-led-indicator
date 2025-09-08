@@ -68,6 +68,13 @@ BUILD_ASSERT(DT_NODE_EXISTS(DT_ALIAS(indicator_led)),
              "An alias for indicator-led is not found for INDICATOR_LED");
 static const uint8_t led_idx = DT_NODE_CHILD_IDX(DT_ALIAS(indicator_led));
 
+// RGB color structure for WS2812/SK6812 (moved up for struct blink_item)
+struct rgb_color {
+    uint8_t r;
+    uint8_t g; 
+    uint8_t b;
+};
+
 // flag to indicate whether the initial boot up sequence is complete
 static bool initialized = false;
 
@@ -83,13 +90,6 @@ struct blink_item {
 // define message queue of blink work items, that will be processed by a separate thread
 // Max 6 sequences; more in queue will be dropped.
 K_MSGQ_DEFINE(led_msgq, sizeof(struct blink_item), 6, 1);
-
-// RGB color structure for WS2812/SK6812
-struct rgb_color {
-    uint8_t r;
-    uint8_t g; 
-    uint8_t b;
-};
 
 // Color definitions
 static const struct rgb_color COLOR_OFF = {0, 0, 0};
