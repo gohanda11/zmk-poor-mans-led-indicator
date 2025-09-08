@@ -1,6 +1,7 @@
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/led.h>
+#include <zephyr/drivers/led_strip.h>
 #include <zephyr/kernel.h>
 #include <zephyr/init.h>
 
@@ -59,14 +60,20 @@ static const uint16_t STAY_ON[] = {10};
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
+// LED Strip device for WS2812/SK6812
+#if DT_NODE_EXISTS(DT_CHOSEN(zmk_underglow))
+#define LED_STRIP_NODE DT_CHOSEN(zmk_underglow)
+static const struct device *led_dev = DEVICE_DT_GET(LED_STRIP_NODE);
+static const bool use_led_strip = true;
+#else
+// Fallback to GPIO LED
 #define LED_GPIO_NODE_ID DT_COMPAT_GET_ANY_STATUS_OKAY(gpio_leds)
-
-// GPIO-based LED device and indices of LED inside its DT node
 static const struct device *led_dev = DEVICE_DT_GET(LED_GPIO_NODE_ID);
-
 BUILD_ASSERT(DT_NODE_EXISTS(DT_ALIAS(indicator_led)),
              "An alias for indicator-led is not found for INDICATOR_LED");
 static const uint8_t led_idx = DT_NODE_CHILD_IDX(DT_ALIAS(indicator_led));
+static const bool use_led_strip = false;
+#endif
 
 // RGB color structure for WS2812/SK6812 (moved up for struct blink_item)
 struct rgb_color {
@@ -99,15 +106,29 @@ static const struct rgb_color COLOR_BLUE = {0, 0, 255};
 static const struct rgb_color COLOR_YELLOW = {255, 255, 0};
 static const struct rgb_color COLOR_WHITE = {255, 255, 255};
 
-// Set LED color for WS2812/SK6812
+// Set LED color - support both LED strip and GPIO LED
 static void set_led_color(struct rgb_color color) {
-    struct led_rgb led_color = {.r = color.r, .g = color.g, .b = color.b};
-    led_strip_update_rgb(led_dev, &led_color, 1);
+    if (use_led_strip) {
+        // Use LED strip for WS2812/SK6812
+        struct led_rgb led_color = {.r = color.r, .g = color.g, .b = color.b};
+        led_strip_update_rgb(led_dev, &led_color, 1);
+    } else {
+        // Use GPIO LED (simple on/off)
+        if (color.r > 0 || color.g > 0 || color.b > 0) {
+            led_on(led_dev, led_idx);
+        } else {
+            led_off(led_dev, led_idx);
+        }
+    }
 }
 
 // Turn LED off
 static void led_off_func(void) {
-    set_led_color(COLOR_OFF);
+    if (use_led_strip) {
+        set_led_color(COLOR_OFF);
+    } else {
+        led_off(led_dev, led_idx);
+    }
 }
 
 static void led_do_blink(struct blink_item blink) {
