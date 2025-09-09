@@ -107,6 +107,14 @@ struct blink_item {
 // Max 6 sequences; more in queue will be dropped.
 K_MSGQ_DEFINE(led_msgq, sizeof(struct blink_item), 6, 1);
 
+// Semaphore to signal completion of LED blink operations
+K_SEM_DEFINE(led_blink_complete_sem, 0, 1);
+
+// Helper function to wait for blink completion with timeout
+static bool wait_for_blink_completion(int timeout_ms) {
+    return k_sem_take(&led_blink_complete_sem, K_MSEC(timeout_ms)) == 0;
+}
+
 static void led_do_blink(struct blink_item blink) {
     struct led_rgb pixels[1];
     
@@ -216,6 +224,15 @@ ZMK_SUBSCRIPTION(led_output_listener, zmk_ble_active_profile_changed);
 ZMK_SUBSCRIPTION(led_output_listener, zmk_split_peripheral_status_changed);
 #endif
 
+// Helper function to send BLE indication and wait for completion
+static void indicate_ble_and_wait(void) {
+    indicate_ble();
+    // Wait for blink completion with timeout (max 5 seconds)
+    if (!wait_for_blink_completion(5000)) {
+        LOG_WRN("BLE indication timeout");
+    }
+}
+
 #endif // IS_ENABLED(CONFIG_ZMK_BLE)
 
 
@@ -288,6 +305,15 @@ static void indicate_startup_battery(void) {
 
     k_msgq_put(&led_msgq, &blink, K_NO_WAIT);
 }
+
+// Helper function to send blink command and wait for completion
+static void indicate_startup_battery_and_wait(void) {
+    indicate_startup_battery();
+    // Wait for blink completion with timeout (max 5 seconds)
+    if (!wait_for_blink_completion(5000)) {
+        LOG_WRN("Battery indication timeout");
+    }
+}
 #endif
 
 #endif // IS_ENABLED(CONFIG_ZMK_BATTERY_REPORTING)
@@ -335,6 +361,9 @@ extern void led_process_thread(void *d0, void *d1, void *d2) {
 
         led_do_blink(blink);
 
+        // Signal completion of blink operation
+        k_sem_give(&led_blink_complete_sem);
+
         // wait interval before processing another blink sequence
         k_sleep(K_MSEC(CONFIG_INDICATOR_LED_INTERVAL_MS));
     }
@@ -353,19 +382,13 @@ extern void led_init_thread(void *d0, void *d1, void *d2) {
     IS_ENABLED(CONFIG_INDICATOR_LED_SHOW_BATTERY_ON_BOOT)
     // 1回目: バッテリー残量表示
     LOG_INF("Indicating initial battery status");
-    indicate_startup_battery();
-    
-    // バッテリー表示完了まで待機
-    k_sleep(K_MSEC(1500));
+    indicate_startup_battery_and_wait();
 #endif // IS_ENABLED(CONFIG_ZMK_BATTERY_REPORTING)
 
 #if IS_ENABLED(CONFIG_ZMK_BLE) && IS_ENABLED(CONFIG_INDICATOR_LED_SHOW_BLE)
     // 2回目: Bluetooth接続状態表示
     LOG_INF("Indicating initial connectivity status");
-    indicate_ble();
-    
-    // 接続状態表示完了まで待機
-    k_sleep(K_MSEC(1500));
+    indicate_ble_and_wait();
 #endif // IS_ENABLED(CONFIG_ZMK_BLE)
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL) || !IS_ENABLED(CONFIG_ZMK_SPLIT)
