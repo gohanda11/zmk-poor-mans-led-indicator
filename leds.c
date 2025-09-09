@@ -1,6 +1,7 @@
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/led.h>
+#include <zephyr/drivers/led_strip.h>
 #include <zephyr/kernel.h>
 #include <zephyr/init.h>
 
@@ -23,11 +24,12 @@ do { \
     blink.sequence_len = LENGTH(seq); \
 } while(0)
 
-#define BLINK_STRUCT(seq, num_repeats) \
+#define BLINK_STRUCT(seq, num_repeats, led_color) \
     (struct blink_item) { \
         .sequence = seq, \
         .sequence_len = LENGTH(seq), \
-        .n_repeats = num_repeats \
+        .n_repeats = num_repeats, \
+        .color = led_color \
     }
 
 static const uint16_t CONFIG_INDICATOR_LED_LAYER_PATTERN[] = {80, 120};
@@ -45,14 +47,23 @@ static const uint16_t STAY_ON[] = {10};
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
-#define LED_GPIO_NODE_ID DT_COMPAT_GET_ANY_STATUS_OKAY(gpio_leds)
+#define LED_STRIP_NODE_ID DT_ALIAS(led_strip)
 
-// GPIO-based LED device and indices of LED inside its DT node
-static const struct device *led_dev = DEVICE_DT_GET(LED_GPIO_NODE_ID);
+// WS2812/SK6812 LED strip device
+static const struct device *led_strip = DEVICE_DT_GET(LED_STRIP_NODE_ID);
 
-BUILD_ASSERT(DT_NODE_EXISTS(DT_ALIAS(indicator_led)),
-             "An alias for indicator-led is not found for INDICATOR_LED");
-static const uint8_t led_idx = DT_NODE_CHILD_IDX(DT_ALIAS(indicator_led));
+BUILD_ASSERT(DT_NODE_EXISTS(DT_ALIAS(led_strip)),
+             "An alias for led-strip is not found for SK6812 LED");
+
+// RGB color definitions
+static const struct led_rgb COLOR_RED = {255, 0, 0};
+static const struct led_rgb COLOR_GREEN = {0, 255, 0};
+static const struct led_rgb COLOR_BLUE = {0, 0, 255};
+static const struct led_rgb COLOR_YELLOW = {255, 255, 0};
+static const struct led_rgb COLOR_MAGENTA = {255, 0, 255};
+static const struct led_rgb COLOR_CYAN = {0, 255, 255};
+static const struct led_rgb COLOR_WHITE = {255, 255, 255};
+static const struct led_rgb COLOR_OFF = {0, 0, 0};
 
 // flag to indicate whether the initial boot up sequence is complete
 static bool initialized = false;
@@ -62,6 +73,7 @@ struct blink_item {
     const uint16_t *sequence;
     size_t sequence_len;
     uint8_t n_repeats;
+    struct led_rgb color;
 };
 
 
@@ -70,16 +82,23 @@ struct blink_item {
 K_MSGQ_DEFINE(led_msgq, sizeof(struct blink_item), 6, 1);
 
 static void led_do_blink(struct blink_item blink) {
-    led_off(led_dev, led_idx);
+    struct led_rgb pixels[1];
+    
+    // 初期消灯
+    pixels[0] = COLOR_OFF;
+    led_strip_update_rgb(led_strip, pixels, 1);
     k_sleep(K_MSEC(200));
+    
     for (int n = 0; n < blink.n_repeats; n++) {
         for (int i = 0; i < blink.sequence_len; i++) {
             // on for evens (0 == start, off for odds. If the sequence contains an odd number, will stay on.
-            if (i%2 == 0){
-                led_on(led_dev, led_idx);
+            if (i % 2 == 0) {
+                pixels[0] = blink.color;  // 指定色で点灯
             } else {
-                led_off(led_dev, led_idx);
+                pixels[0] = COLOR_OFF;    // 消灯
             }
+            led_strip_update_rgb(led_strip, pixels, 1);
+            
             uint16_t blink_time = blink.sequence[i];
             k_sleep(K_MSEC(blink_time));
         }
@@ -93,17 +112,20 @@ static void indicate_ble(void) {
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL) || !IS_ENABLED(CONFIG_ZMK_SPLIT)
     uint8_t profile_index = zmk_ble_active_profile_index() + 1;
     if (zmk_ble_active_profile_is_connected()) {
-        LOG_INF("Profile %d connected, blinking for connected", profile_index);
+        LOG_INF("Profile %d connected, blinking blue", profile_index);
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BLE_PROFILE_CONNECTED_PATTERN);
         blink.n_repeats = profile_index;
+        blink.color = COLOR_BLUE;      // 接続: 青
     } else if (zmk_ble_active_profile_is_open()) {
-        LOG_INF("Profile %d open, blinking for open", profile_index);
+        LOG_INF("Profile %d open, blinking cyan", profile_index);
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BLE_PROFILE_OPEN_PATTERN);
         blink.n_repeats = profile_index;
+        blink.color = COLOR_CYAN;      // 広告中: シアン
     } else {
-        LOG_INF("Profile %d not connected, blinking for unconnected", profile_index);
+        LOG_INF("Profile %d not connected, blinking magenta", profile_index);
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_PROFILE_UNCONNECTED_PATTERN);
         blink.n_repeats = profile_index;
+        blink.color = COLOR_MAGENTA;   // 未接続: マゼンタ
     }
     k_msgq_put(&led_msgq, &blink, K_NO_WAIT);
 #endif
@@ -111,13 +133,15 @@ static void indicate_ble(void) {
     IS_ENABLED(CONFIG_ZMK_SPLIT) && \
     !IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
     if (zmk_split_bt_peripheral_is_connected()) {
-        LOG_INF("Peripheral connected, blinking once");
+        LOG_INF("Peripheral connected, blinking blue");
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BLE_PROFILE_CONNECTED_PATTERN);
         blink.n_repeats = 1;
+        blink.color = COLOR_BLUE;      // 接続: 青
     } else {
-        LOG_INF("Peripheral not connected, blinking for unconnected");
+        LOG_INF("Peripheral not connected, blinking magenta");
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_PROFILE_UNCONNECTED_PATTERN);
         blink.n_repeats = 10;
+        blink.color = COLOR_MAGENTA;   // 未接続: マゼンタ
     }
     k_msgq_put(&led_msgq, &blink, K_NO_WAIT);
 #endif
@@ -160,7 +184,7 @@ static int led_battery_listener_cb(const zmk_event_t *eh) {
         LOG_INF("Battery level %d, blinking for critical", battery_level);
 
         static const struct blink_item blink = BLINK_STRUCT(
-            CONFIG_INDICATOR_LED_BATTERY_CRITICAL_PATTERN, 1
+            CONFIG_INDICATOR_LED_BATTERY_CRITICAL_PATTERN, 1, COLOR_RED
         );
         k_msgq_put(&led_msgq, &blink, K_NO_WAIT);
     }
@@ -188,20 +212,25 @@ static void indicate_startup_battery(void) {
         LOG_INF("Startup Battery level undetermined (zero), blinking off");
         blink.sequence_len = 0;
         blink.n_repeats = 0;
+        blink.color = COLOR_OFF;
     } else if (battery_level >= CONFIG_INDICATOR_LED_BATTERY_LEVEL_HIGH) {
-        LOG_INF("Startup Battery level %d, blinking for high", battery_level);
+        LOG_INF("Startup Battery level %d, blinking green", battery_level);
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BATTERY_HIGH_PATTERN);
         blink.n_repeats = CONFIG_INDICATOR_LED_BATTERY_HIGH_BLINK_REPEAT;
+        blink.color = COLOR_GREEN;     // 高: 緑
     } else if (battery_level <= CONFIG_INDICATOR_LED_BATTERY_LEVEL_CRITICAL){
-        LOG_INF("Startup Battery level %d, blinking for critical", battery_level);
+        LOG_INF("Startup Battery level %d, blinking red", battery_level);
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BATTERY_CRITICAL_PATTERN);
         blink.n_repeats = CONFIG_INDICATOR_LED_BATTERY_CRITICAL_BLINK_REPEAT;
+        blink.color = COLOR_RED;       // 危険: 赤
     } else if (battery_level <= CONFIG_INDICATOR_LED_BATTERY_LEVEL_LOW) {
-        LOG_INF("Startup Battery level %d, blinking for low", battery_level);
+        LOG_INF("Startup Battery level %d, blinking yellow", battery_level);
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BATTERY_LOW_PATTERN);
         blink.n_repeats = CONFIG_INDICATOR_LED_BATTERY_LOW_BLINK_REPEAT;
+        blink.color = COLOR_YELLOW;    // 低: 黄
     } else {
         blink.n_repeats = 0;
+        blink.color = COLOR_OFF;
     }
 
     k_msgq_put(&led_msgq, &blink, K_NO_WAIT);
@@ -226,13 +255,13 @@ static int led_layer_listener_cb(const zmk_event_t *eh) {
     uint8_t index = zmk_keymap_highest_layer_active()+1;
     LOG_INF("Changed to layer %d", index);
     struct blink_item blink = BLINK_STRUCT(
-        CONFIG_INDICATOR_LED_LAYER_PATTERN, index
+        CONFIG_INDICATOR_LED_LAYER_PATTERN, index, COLOR_WHITE
     );
     k_msgq_put(&led_msgq, &blink, K_NO_WAIT);
     if (zmk_keymap_highest_layer_active() >=
         CONFIG_INDICATOR_LED_LAYER_PERSISTENCE_THRESHOLD) {
         blink = BLINK_STRUCT(
-            STAY_ON, 1
+            STAY_ON, 1, COLOR_WHITE
         );
         k_msgq_put(&led_msgq, &blink, K_NO_WAIT);
 

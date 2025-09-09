@@ -3,7 +3,13 @@ config INDICATOR_LED_WIDGET
 
 if INDICATOR_LED_WIDGET
 
-config LED
+config LED_STRIP
+    default y
+
+config WS2812_STRIP  
+    default y
+
+config SPI
     default y
 
 config INDICATOR_LED_SHOW_LAYER_CHANGE
