@@ -265,45 +265,55 @@ ZMK_SUBSCRIPTION(led_battery_listener, zmk_battery_state_changed);
 #if IS_ENABLED(CONFIG_INDICATOR_LED_SHOW_BATTERY_ON_BOOT)
 static void indicate_startup_battery(void) {
     // check and indicate battery level on thread start
-    LOG_INF("Indicating initial battery status");
+    LOG_INF("Starting battery status check");
 
     struct blink_item blink = {};
     uint8_t battery_level = zmk_battery_state_of_charge();
+    LOG_INF("Initial battery level reading: %d", battery_level);
+    
     int retry = 0;
     while (battery_level == 0 && retry++ < 10) {
+        LOG_DBG("Battery level is 0, retrying %d/10", retry);
         k_sleep(K_MSEC(100));
         battery_level = zmk_battery_state_of_charge();
+        LOG_DBG("Retry %d battery level: %d", retry, battery_level);
     };
 
     if (battery_level == 0) {
-        LOG_INF("Startup Battery level undetermined (zero), blinking off");
-        blink.sequence_len = 0;
-        blink.n_repeats = 0;
-        blink.color = COLOR_OFF;
+        LOG_WRN("Startup Battery level undetermined (zero after %d retries), using default green blink", retry);
+        SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BATTERY_HIGH_PATTERN);
+        blink.n_repeats = 1;
+        blink.color = COLOR_GREEN;     // デフォルト: 緑
+        blink.is_persistent = false;
     } else if (battery_level >= CONFIG_INDICATOR_LED_BATTERY_LEVEL_HIGH) {
-        LOG_INF("Startup Battery level %d, blinking green", battery_level);
+        LOG_INF("Startup Battery level %d >= %d, blinking green", battery_level, CONFIG_INDICATOR_LED_BATTERY_LEVEL_HIGH);
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BATTERY_HIGH_PATTERN);
         blink.n_repeats = CONFIG_INDICATOR_LED_BATTERY_HIGH_BLINK_REPEAT;
         blink.color = COLOR_GREEN;     // 高: 緑
         blink.is_persistent = false;
     } else if (battery_level <= CONFIG_INDICATOR_LED_BATTERY_LEVEL_CRITICAL){
-        LOG_INF("Startup Battery level %d, blinking red", battery_level);
+        LOG_INF("Startup Battery level %d <= %d, blinking red", battery_level, CONFIG_INDICATOR_LED_BATTERY_LEVEL_CRITICAL);
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BATTERY_CRITICAL_PATTERN);
         blink.n_repeats = CONFIG_INDICATOR_LED_BATTERY_CRITICAL_BLINK_REPEAT;
         blink.color = COLOR_RED;       // 危険: 赤
         blink.is_persistent = false;
     } else if (battery_level <= CONFIG_INDICATOR_LED_BATTERY_LEVEL_LOW) {
-        LOG_INF("Startup Battery level %d, blinking yellow", battery_level);
+        LOG_INF("Startup Battery level %d <= %d, blinking yellow", battery_level, CONFIG_INDICATOR_LED_BATTERY_LEVEL_LOW);
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BATTERY_LOW_PATTERN);
         blink.n_repeats = CONFIG_INDICATOR_LED_BATTERY_LOW_BLINK_REPEAT;
         blink.color = COLOR_YELLOW;    // 低: 黄
         blink.is_persistent = false;
     } else {
+        LOG_INF("Startup Battery level %d is in middle range, no blink", battery_level);
         blink.n_repeats = 0;
         blink.color = COLOR_OFF;
     }
 
-    k_msgq_put(&led_msgq, &blink, K_NO_WAIT);
+    LOG_INF("Sending battery blink command: repeats=%d, color=0x%x", blink.n_repeats, blink.color.r << 16 | blink.color.g << 8 | blink.color.b);
+    int result = k_msgq_put(&led_msgq, &blink, K_NO_WAIT);
+    if (result != 0) {
+        LOG_ERR("Failed to send battery blink command: %d", result);
+    }
 }
 
 // Helper function to send blink command and wait for completion
@@ -353,16 +363,25 @@ extern void led_process_thread(void *d0, void *d1, void *d2) {
     ARG_UNUSED(d0);
     ARG_UNUSED(d1);
     ARG_UNUSED(d2);
+    
+    LOG_INF("LED process thread started");
+    
     while (true) {
         // wait until a blink item is received and process it
         struct blink_item blink;
+        LOG_DBG("Waiting for blink item from msgq");
         k_msgq_get(&led_msgq, &blink, K_FOREVER);
-        LOG_DBG("Got a blink item from msgq");
+        LOG_INF("Got blink item: repeats=%d, color=0x%x, persistent=%s", 
+                blink.n_repeats, 
+                blink.color.r << 16 | blink.color.g << 8 | blink.color.b,
+                blink.is_persistent ? "yes" : "no");
 
         led_do_blink(blink);
+        LOG_INF("Completed blink operation");
 
         // Signal completion of blink operation
         k_sem_give(&led_blink_complete_sem);
+        LOG_DBG("Signaled blink completion");
 
         // wait interval before processing another blink sequence
         k_sleep(K_MSEC(CONFIG_INDICATOR_LED_INTERVAL_MS));
@@ -378,17 +397,25 @@ extern void led_init_thread(void *d0, void *d1, void *d2) {
     ARG_UNUSED(d1);
     ARG_UNUSED(d2);
 
+    LOG_INF("LED init thread started");
+
 #if IS_ENABLED(CONFIG_ZMK_BATTERY_REPORTING) && \
     IS_ENABLED(CONFIG_INDICATOR_LED_SHOW_BATTERY_ON_BOOT)
     // 1回目: バッテリー残量表示
-    LOG_INF("Indicating initial battery status");
+    LOG_INF("Starting battery indication sequence");
     indicate_startup_battery_and_wait();
+    LOG_INF("Battery indication sequence completed");
+#else
+    LOG_INF("Battery indication is disabled");
 #endif // IS_ENABLED(CONFIG_ZMK_BATTERY_REPORTING)
 
 #if IS_ENABLED(CONFIG_ZMK_BLE) && IS_ENABLED(CONFIG_INDICATOR_LED_SHOW_BLE)
     // 2回目: Bluetooth接続状態表示
-    LOG_INF("Indicating initial connectivity status");
+    LOG_INF("Starting BLE indication sequence");
     indicate_ble_and_wait();
+    LOG_INF("BLE indication sequence completed");
+#else
+    LOG_INF("BLE indication is disabled");
 #endif // IS_ENABLED(CONFIG_ZMK_BLE)
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL) || !IS_ENABLED(CONFIG_ZMK_SPLIT)
