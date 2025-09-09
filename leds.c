@@ -59,14 +59,14 @@ BUILD_ASSERT(DT_NODE_EXISTS(DT_ALIAS(led_strip)),
 // Test results: COLOR_BLUE {0,255,0} shows red -> g channel goes to Red LED
 // color-mapping = <LED_COLOR_ID_GREEN LED_COLOR_ID_RED LED_COLOR_ID_BLUE>
 // Final mapping: led_rgb.r->Green, led_rgb.g->Red, led_rgb.b->Blue
-static const struct led_rgb COLOR_RED = {0, 255, 0};      // {G=0, R=255, B=0} -> Red
-static const struct led_rgb COLOR_GREEN = {255, 0, 0};    // {G=255, R=0, B=0} -> Green
-static const struct led_rgb COLOR_BLUE = {0, 0, 255};     // {G=0, R=0, B=255} -> Blue
-static const struct led_rgb COLOR_YELLOW = {255, 255, 0}; // {G=255, R=255, B=0} -> Yellow (Red+Green)
-static const struct led_rgb COLOR_MAGENTA = {0, 255, 255}; // {G=0, R=255, B=255} -> Magenta (Red+Blue)
-static const struct led_rgb COLOR_CYAN = {255, 0, 255};   // {G=255, R=0, B=255} -> Cyan (Green+Blue)
-static const struct led_rgb COLOR_WHITE = {255, 255, 255}; // {G=255, R=255, B=255} -> White
-static const struct led_rgb COLOR_OFF = {0, 0, 0};        // {G=0, R=0, B=0} -> Off
+static const struct led_rgb COLOR_RED    = {255, 0, 0}; // Red
+static const struct led_rgb COLOR_GREEN  = {0, 255, 0}; // Green
+static const struct led_rgb COLOR_BLUE   = {0, 0, 255}; // Blue
+static const struct led_rgb COLOR_YELLOW = {255, 255, 0}; // Red + Green
+static const struct led_rgb COLOR_MAGENTA= {255, 0, 255}; // Red + Blue
+static const struct led_rgb COLOR_CYAN   = {0, 255, 255}; // Green + Blue
+static const struct led_rgb COLOR_WHITE  = {255, 255, 255}; // White
+static const struct led_rgb COLOR_OFF    = {0, 0, 0}; // Off
 
 // Layer color mapping (like zmk-rgbled-widget)
 static const struct led_rgb LAYER_COLORS[] = {
