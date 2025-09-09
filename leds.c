@@ -55,17 +55,18 @@ static const struct device *led_strip = DEVICE_DT_GET(LED_STRIP_NODE_ID);
 BUILD_ASSERT(DT_NODE_EXISTS(DT_ALIAS(led_strip)),
              "An alias for led-strip is not found for SK6812 LED");
 
-// RGB color definitions for WS2812 with color-mapping: G-R-B
+// RGB color definitions for WS2812 - corrected based on actual behavior
+// Observed: COLOR_BLUE {0,0,255} shows as green -> B channel goes to Green LED
 // color-mapping = <LED_COLOR_ID_GREEN LED_COLOR_ID_RED LED_COLOR_ID_BLUE>
-// This means: led_rgb.r->Green, led_rgb.g->Red, led_rgb.b->Blue
-static const struct led_rgb COLOR_RED = {0, 255, 0};      // {G=0, R=255, B=0} -> Red
-static const struct led_rgb COLOR_GREEN = {255, 0, 0};    // {G=255, R=0, B=0} -> Green
-static const struct led_rgb COLOR_BLUE = {0, 0, 255};     // {G=0, R=0, B=255} -> Blue
-static const struct led_rgb COLOR_YELLOW = {255, 255, 0}; // {G=255, R=255, B=0} -> Yellow
-static const struct led_rgb COLOR_MAGENTA = {0, 255, 255}; // {G=0, R=255, B=255} -> Magenta
-static const struct led_rgb COLOR_CYAN = {255, 0, 255};   // {G=255, R=0, B=255} -> Cyan
-static const struct led_rgb COLOR_WHITE = {255, 255, 255}; // {G=255, R=255, B=255} -> White
-static const struct led_rgb COLOR_OFF = {0, 0, 0};        // {G=0, R=0, B=0} -> Off
+// Actual mapping: led_rgb.r->Red, led_rgb.g->Blue, led_rgb.b->Green
+static const struct led_rgb COLOR_RED = {255, 0, 0};      // {R=255, B=0, G=0} -> Red
+static const struct led_rgb COLOR_GREEN = {0, 0, 255};    // {R=0, B=0, G=255} -> Green
+static const struct led_rgb COLOR_BLUE = {0, 255, 0};     // {R=0, B=255, G=0} -> Blue
+static const struct led_rgb COLOR_YELLOW = {255, 0, 255}; // {R=255, B=0, G=255} -> Yellow (Red+Green)
+static const struct led_rgb COLOR_MAGENTA = {255, 255, 0}; // {R=255, B=255, G=0} -> Magenta (Red+Blue)
+static const struct led_rgb COLOR_CYAN = {0, 255, 255};   // {R=0, B=255, G=255} -> Cyan (Green+Blue)
+static const struct led_rgb COLOR_WHITE = {255, 255, 255}; // {R=255, B=255, G=255} -> White
+static const struct led_rgb COLOR_OFF = {0, 0, 0};        // {R=0, B=0, G=0} -> Off
 
 // Layer color mapping (like zmk-rgbled-widget)
 static const struct led_rgb LAYER_COLORS[] = {
