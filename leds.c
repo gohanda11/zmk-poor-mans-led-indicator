@@ -29,29 +29,19 @@ do { \
         .sequence = seq, \
         .sequence_len = LENGTH(seq), \
         .n_repeats = num_repeats, \
-        .color = led_color, \
-        .is_persistent = false \
-    }
-
-#define BLINK_STRUCT_PERSISTENT(seq, num_repeats, led_color) \
-    (struct blink_item) { \
-        .sequence = seq, \
-        .sequence_len = LENGTH(seq), \
-        .n_repeats = num_repeats, \
-        .color = led_color, \
-        .is_persistent = true \
+        .color = led_color \
     }
 
 static const uint16_t CONFIG_INDICATOR_LED_LAYER_PATTERN[] = {80, 120};
 static const uint16_t CONFIG_INDICATOR_LED_BATTERY_CRITICAL_PATTERN[] = {40, 40};
-static const uint16_t CONFIG_INDICATOR_LED_BATTERY_HIGH_PATTERN[] = {800, 200};
-static const uint16_t CONFIG_INDICATOR_LED_BATTERY_LOW_PATTERN[] = {400, 200};
-// When connected, solid blink
-static const uint16_t CONFIG_INDICATOR_LED_BLE_PROFILE_CONNECTED_PATTERN[] = {800, 200};
-// When open/unpaired, shorter blips
-static const uint16_t CONFIG_INDICATOR_LED_BLE_PROFILE_OPEN_PATTERN[] = {400, 200};
-// When unconnected, quick blinks
-static const uint16_t CONFIG_INDICATOR_LED_PROFILE_UNCONNECTED_PATTERN[] = {300, 200};
+static const uint16_t CONFIG_INDICATOR_LED_BATTERY_HIGH_PATTERN[] = {500, 500};
+static const uint16_t CONFIG_INDICATOR_LED_BATTERY_LOW_PATTERN[] = {100, 100};
+// When connected, more on than off
+static const uint16_t CONFIG_INDICATOR_LED_BLE_PROFILE_CONNECTED_PATTERN[] = {1000, 100};
+// When open/unpaired, tiny blips.
+static const uint16_t CONFIG_INDICATOR_LED_BLE_PROFILE_OPEN_PATTERN[] = {80, 80};
+// When unconnected and searching, more off than on
+static const uint16_t CONFIG_INDICATOR_LED_PROFILE_UNCONNECTED_PATTERN[] = {200, 800};
 static const uint16_t STAY_ON[] = {10};
 
 
@@ -78,28 +68,12 @@ static const struct led_rgb COLOR_OFF = {0, 0, 0};
 // flag to indicate whether the initial boot up sequence is complete
 static bool initialized = false;
 
-// track current persistent layer color
-static struct led_rgb led_current_persistent_color = {0, 0, 0};
-
-// Layer color mapping for different layers
-static const struct led_rgb LAYER_COLORS[] = {
-    {0, 0, 0},       // Layer 0: OFF (default)
-    {255, 0, 0},     // Layer 1: Red
-    {0, 255, 0},     // Layer 2: Green  
-    {0, 0, 255},     // Layer 3: Blue
-    {255, 255, 0},   // Layer 4: Yellow
-    {255, 0, 255},   // Layer 5: Magenta
-    {0, 255, 255},   // Layer 6: Cyan
-    {255, 255, 255}, // Layer 7: White
-};
-
 // a blink work item as specified by the blink rate
 struct blink_item {
     const uint16_t *sequence;
     size_t sequence_len;
     uint8_t n_repeats;
     struct led_rgb color;
-    bool is_persistent;  // if true, this color persists after blinking
 };
 
 
@@ -110,23 +84,14 @@ K_MSGQ_DEFINE(led_msgq, sizeof(struct blink_item), 6, 1);
 static void led_do_blink(struct blink_item blink) {
     struct led_rgb pixels[1];
     
-    // 持続表示の場合（点滅なし）
-    if (blink.is_persistent) {
-        led_current_persistent_color = blink.color;
-        pixels[0] = blink.color;
-        led_strip_update_rgb(led_strip, pixels, 1);
-        return;
-    }
-    
-    // 点滅表示の場合
     // 初期消灯
     pixels[0] = COLOR_OFF;
     led_strip_update_rgb(led_strip, pixels, 1);
-    k_sleep(K_MSEC(100));  // 短い待機
+    k_sleep(K_MSEC(200));
     
     for (int n = 0; n < blink.n_repeats; n++) {
         for (int i = 0; i < blink.sequence_len; i++) {
-            // on for evens (0 == start), off for odds
+            // on for evens (0 == start, off for odds. If the sequence contains an odd number, will stay on.
             if (i % 2 == 0) {
                 pixels[0] = blink.color;  // 指定色で点灯
             } else {
@@ -137,17 +102,7 @@ static void led_do_blink(struct blink_item blink) {
             uint16_t blink_time = blink.sequence[i];
             k_sleep(K_MSEC(blink_time));
         }
-        // 各繰り返し間に短い間隔
-        if (n < blink.n_repeats - 1) {
-            pixels[0] = COLOR_OFF;
-            led_strip_update_rgb(led_strip, pixels, 1);
-            k_sleep(K_MSEC(200));
-        }
     }
-    
-    // 点滅後は持続色に戻す
-    pixels[0] = led_current_persistent_color;
-    led_strip_update_rgb(led_strip, pixels, 1);
 }
 
 #if IS_ENABLED(CONFIG_ZMK_BLE) && IS_ENABLED(CONFIG_INDICATOR_LED_SHOW_BLE)
@@ -161,19 +116,16 @@ static void indicate_ble(void) {
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BLE_PROFILE_CONNECTED_PATTERN);
         blink.n_repeats = profile_index;
         blink.color = COLOR_BLUE;      // 接続: 青
-        blink.is_persistent = false;
     } else if (zmk_ble_active_profile_is_open()) {
-        LOG_INF("Profile %d open, blinking yellow", profile_index);
+        LOG_INF("Profile %d open, blinking cyan", profile_index);
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BLE_PROFILE_OPEN_PATTERN);
         blink.n_repeats = profile_index;
-        blink.color = COLOR_YELLOW;    // 広告中: 黄色
-        blink.is_persistent = false;
+        blink.color = COLOR_CYAN;      // 広告中: シアン
     } else {
-        LOG_INF("Profile %d not connected, blinking red", profile_index);
+        LOG_INF("Profile %d not connected, blinking magenta", profile_index);
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_PROFILE_UNCONNECTED_PATTERN);
         blink.n_repeats = profile_index;
-        blink.color = COLOR_RED;       // 未接続: 赤
-        blink.is_persistent = false;
+        blink.color = COLOR_MAGENTA;   // 未接続: マゼンタ
     }
     k_msgq_put(&led_msgq, &blink, K_NO_WAIT);
 #endif
@@ -185,13 +137,11 @@ static void indicate_ble(void) {
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BLE_PROFILE_CONNECTED_PATTERN);
         blink.n_repeats = 1;
         blink.color = COLOR_BLUE;      // 接続: 青
-        blink.is_persistent = false;
     } else {
-        LOG_INF("Peripheral not connected, blinking red");
+        LOG_INF("Peripheral not connected, blinking magenta");
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_PROFILE_UNCONNECTED_PATTERN);
         blink.n_repeats = 10;
-        blink.color = COLOR_RED;       // 未接続: 赤
-        blink.is_persistent = false;
+        blink.color = COLOR_MAGENTA;   // 未接続: マゼンタ
     }
     k_msgq_put(&led_msgq, &blink, K_NO_WAIT);
 #endif
@@ -268,19 +218,16 @@ static void indicate_startup_battery(void) {
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BATTERY_HIGH_PATTERN);
         blink.n_repeats = CONFIG_INDICATOR_LED_BATTERY_HIGH_BLINK_REPEAT;
         blink.color = COLOR_GREEN;     // 高: 緑
-        blink.is_persistent = false;
     } else if (battery_level <= CONFIG_INDICATOR_LED_BATTERY_LEVEL_CRITICAL){
         LOG_INF("Startup Battery level %d, blinking red", battery_level);
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BATTERY_CRITICAL_PATTERN);
         blink.n_repeats = CONFIG_INDICATOR_LED_BATTERY_CRITICAL_BLINK_REPEAT;
         blink.color = COLOR_RED;       // 危険: 赤
-        blink.is_persistent = false;
     } else if (battery_level <= CONFIG_INDICATOR_LED_BATTERY_LEVEL_LOW) {
         LOG_INF("Startup Battery level %d, blinking yellow", battery_level);
         SET_BLINK_SEQUENCE(CONFIG_INDICATOR_LED_BATTERY_LOW_PATTERN);
         blink.n_repeats = CONFIG_INDICATOR_LED_BATTERY_LOW_BLINK_REPEAT;
         blink.color = COLOR_YELLOW;    // 低: 黄
-        blink.is_persistent = false;
     } else {
         blink.n_repeats = 0;
         blink.color = COLOR_OFF;
@@ -305,14 +252,19 @@ static int led_layer_listener_cb(const zmk_event_t *eh) {
     //     return 0;
     // }
 
-    // レイヤー色を直接持続表示に設定（点滅なし）
-    uint8_t layer_idx = zmk_keymap_highest_layer_active();
-    if (layer_idx < LENGTH(LAYER_COLORS)) {
-        LOG_INF("Changed to layer %d, setting color", layer_idx);
-        struct blink_item blink = BLINK_STRUCT_PERSISTENT(
-            STAY_ON, 1, LAYER_COLORS[layer_idx]
+    uint8_t index = zmk_keymap_highest_layer_active()+1;
+    LOG_INF("Changed to layer %d", index);
+    struct blink_item blink = BLINK_STRUCT(
+        CONFIG_INDICATOR_LED_LAYER_PATTERN, index, COLOR_WHITE
+    );
+    k_msgq_put(&led_msgq, &blink, K_NO_WAIT);
+    if (zmk_keymap_highest_layer_active() >=
+        CONFIG_INDICATOR_LED_LAYER_PERSISTENCE_THRESHOLD) {
+        blink = BLINK_STRUCT(
+            STAY_ON, 1, COLOR_WHITE
         );
         k_msgq_put(&led_msgq, &blink, K_NO_WAIT);
+
     }
     return 0;
 }
@@ -351,40 +303,14 @@ extern void led_init_thread(void *d0, void *d1, void *d2) {
 
 #if IS_ENABLED(CONFIG_ZMK_BATTERY_REPORTING) && \
     IS_ENABLED(CONFIG_INDICATOR_LED_SHOW_BATTERY_ON_BOOT)
-    // 1回目: バッテリー残量表示
-    LOG_INF("Indicating initial battery status");
     indicate_startup_battery();
-    
-    // バッテリー表示完了まで待機
-    k_sleep(K_MSEC(1500));
 #endif // IS_ENABLED(CONFIG_ZMK_BATTERY_REPORTING)
 
 #if IS_ENABLED(CONFIG_ZMK_BLE) && IS_ENABLED(CONFIG_INDICATOR_LED_SHOW_BLE)
-    // 2回目: Bluetooth接続状態表示
+    // check and indicate current profile or peripheral connectivity status
     LOG_INF("Indicating initial connectivity status");
     indicate_ble();
-    
-    // 接続状態表示完了まで待機
-    k_sleep(K_MSEC(1500));
 #endif // IS_ENABLED(CONFIG_ZMK_BLE)
-
-#if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL) || !IS_ENABLED(CONFIG_ZMK_SPLIT)
-    // 3回目: 現在のレイヤー色を持続表示に設定 (central側のみ)
-    uint8_t layer_idx = zmk_keymap_highest_layer_active();
-    if (layer_idx < LENGTH(LAYER_COLORS)) {
-        LOG_INF("Setting initial layer color for layer %d", layer_idx);
-        struct blink_item layer_blink = BLINK_STRUCT_PERSISTENT(
-            STAY_ON, 1, LAYER_COLORS[layer_idx]
-        );
-        k_msgq_put(&led_msgq, &layer_blink, K_NO_WAIT);
-    }
-#else
-    // peripheral側では消灯状態を設定
-    struct blink_item layer_blink = BLINK_STRUCT_PERSISTENT(
-        STAY_ON, 1, COLOR_OFF
-    );
-    k_msgq_put(&led_msgq, &layer_blink, K_NO_WAIT);
-#endif
 
     initialized = true;
     LOG_INF("Finished initializing LED widget");
