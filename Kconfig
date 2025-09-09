@@ -13,12 +13,18 @@ config SPI
     default y
 
 config INDICATOR_LED_SHOW_LAYER_CHANGE
-    bool "Indicate highest active layer on each layer change with a sequence of blinks"
+    bool "Show layer colors - each layer gets its own constant color display"
         default y
+        help
+            When enabled, each layer will display its own color constantly while active.
+            Layer 0 (base): Off/Black, Layer 1: Red, Layer 2: Green, Layer 3: Yellow,
+            Layer 4: Blue, Layer 5: Magenta, Layer 6: Cyan, Layer 7: White
 
 config INDICATOR_LED_LAYER_PERSISTENCE_THRESHOLD
     int "At which layer number (starting from 0) should the LED stay lit after its blink sequence, to indicate a non-default layer is still active."
         default 200
+        help
+            This setting is deprecated in favor of constant layer color display.
 
 config INDICATOR_LED_SHOW_BATTERY_ON_BOOT
     bool "Indicate battery level on startup with a sequence of blinks"

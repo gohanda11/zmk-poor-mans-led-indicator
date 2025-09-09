@@ -65,6 +65,20 @@ static const struct led_rgb COLOR_CYAN = {0, 255, 255};
 static const struct led_rgb COLOR_WHITE = {255, 255, 255};
 static const struct led_rgb COLOR_OFF = {0, 0, 0};
 
+// Layer color mapping (like zmk-rgbled-widget)
+static const struct led_rgb LAYER_COLORS[] = {
+    COLOR_OFF,      // Layer 0 (base): Off/Black
+    COLOR_RED,      // Layer 1: Red
+    COLOR_GREEN,    // Layer 2: Green
+    COLOR_YELLOW,   // Layer 3: Yellow
+    COLOR_BLUE,     // Layer 4: Blue
+    COLOR_MAGENTA,  // Layer 5: Magenta
+    COLOR_CYAN,     // Layer 6: Cyan
+    COLOR_WHITE,    // Layer 7: White
+};
+
+#define NUM_LAYER_COLORS (sizeof(LAYER_COLORS) / sizeof(LAYER_COLORS[0]))
+
 // flag to indicate whether the initial boot up sequence is complete
 static bool initialized = false;
 
@@ -260,33 +274,31 @@ static void indicate_startup_battery(void) {
 
 #if IS_ENABLED(CONFIG_INDICATOR_LED_SHOW_LAYER_CHANGE)
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL) || !IS_ENABLED(CONFIG_ZMK_SPLIT)
+static void set_layer_color(uint8_t layer) {
+    struct led_rgb pixels[1];
+    
+    // Get color for the layer (use white if layer exceeds defined colors)
+    if (layer < NUM_LAYER_COLORS) {
+        pixels[0] = LAYER_COLORS[layer];
+    } else {
+        pixels[0] = COLOR_WHITE;
+    }
+    
+    // Set LED to the layer color
+    led_strip_update_rgb(led_strip, pixels, 1);
+    LOG_INF("Set layer %d color", layer);
+}
+
 static int led_layer_listener_cb(const zmk_event_t *eh) {
     if (!initialized) {
         return 0;
     }
 
-    uint8_t index = zmk_keymap_highest_layer_active()+1;
-    LOG_INF("Changed to layer %d", index);
+    uint8_t layer = zmk_keymap_highest_layer_active();
+    LOG_INF("Changed to layer %d", layer);
     
-    // Show layer change with white blinks
-    struct blink_item blink = BLINK_STRUCT(
-        CONFIG_INDICATOR_LED_LAYER_PATTERN, index, COLOR_WHITE
-    );
-    k_msgq_put(&led_msgq, &blink, K_NO_WAIT);
-    
-    // Only keep LED on if above persistence threshold
-    if (zmk_keymap_highest_layer_active() >= CONFIG_INDICATOR_LED_LAYER_PERSISTENCE_THRESHOLD) {
-        // Wait before showing persistent indicator
-        k_sleep(K_MSEC(CONFIG_INDICATOR_LED_INTERVAL_MS));
-        
-        struct blink_item persistent_blink = {};
-        persistent_blink.sequence = STAY_ON;
-        persistent_blink.sequence_len = LENGTH(STAY_ON);
-        persistent_blink.n_repeats = 1;
-        persistent_blink.color = COLOR_WHITE;
-        
-        k_msgq_put(&led_msgq, &persistent_blink, K_NO_WAIT);
-    }
+    // Set constant color based on layer (like zmk-rgbled-widget)
+    set_layer_color(layer);
     
     return 0;
 }
@@ -344,6 +356,14 @@ extern void led_init_thread(void *d0, void *d1, void *d2) {
 
     initialized = true;
     LOG_INF("Finished initializing LED widget");
+
+#if IS_ENABLED(CONFIG_INDICATOR_LED_SHOW_LAYER_CHANGE)
+#if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL) || !IS_ENABLED(CONFIG_ZMK_SPLIT)
+    // Set initial layer color (like zmk-rgbled-widget)
+    LOG_INF("Setting initial layer color");
+    set_layer_color(zmk_keymap_highest_layer_active());
+#endif
+#endif
 }
 
 // run init thread on boot for initial battery+output checks  
