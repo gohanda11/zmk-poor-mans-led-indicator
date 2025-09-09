@@ -201,7 +201,7 @@ static int led_battery_listener_cb(const zmk_event_t *eh) {
     if (battery_level > 0 && battery_level <= CONFIG_INDICATOR_LED_BATTERY_LEVEL_CRITICAL) {
         LOG_INF("Battery level %d, blinking for critical", battery_level);
 
-        static const struct blink_item blink = BLINK_STRUCT(
+        struct blink_item blink = BLINK_STRUCT(
             CONFIG_INDICATOR_LED_BATTERY_CRITICAL_PATTERN, 1, COLOR_RED
         );
         k_msgq_put(&led_msgq, &blink, K_NO_WAIT);
