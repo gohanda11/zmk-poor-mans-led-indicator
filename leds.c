@@ -56,17 +56,16 @@ BUILD_ASSERT(DT_NODE_EXISTS(DT_ALIAS(led_strip)),
              "An alias for led-strip is not found for SK6812 LED");
 
 // RGB color definitions for WS2812
-// color-mapping = <LED_COLOR_ID_GREEN LED_COLOR_ID_RED LED_COLOR_ID_BLUE>
-// Physical LED order: Green, Red, Blue
-// led_rgb struct mapping: .r->Green, .g->Red, .b->Blue
-static const struct led_rgb COLOR_RED    = {0, 255, 0}; // {Green=0, Red=255, Blue=0}
-static const struct led_rgb COLOR_GREEN  = {255, 0, 0}; // {Green=255, Red=0, Blue=0}
-static const struct led_rgb COLOR_BLUE   = {0, 0, 255}; // {Green=0, Red=0, Blue=255}
-static const struct led_rgb COLOR_YELLOW = {255, 255, 0}; // Green + Red
-static const struct led_rgb COLOR_MAGENTA= {0, 255, 255}; // Red + Blue
-static const struct led_rgb COLOR_CYAN   = {255, 0, 255}; // Green + Blue
-static const struct led_rgb COLOR_WHITE  = {255, 255, 255}; // All colors
-static const struct led_rgb COLOR_OFF    = {0, 0, 0}; // Off
+// led_rgb struct members: .r=Red, .g=Green, .b=Blue (always standard)
+// color-mapping only affects wire transmission order, not struct members
+static const struct led_rgb COLOR_RED    = {255, 0, 0};   // Pure red
+static const struct led_rgb COLOR_GREEN  = {0, 255, 0};   // Pure green  
+static const struct led_rgb COLOR_BLUE   = {0, 0, 255};   // Pure blue
+static const struct led_rgb COLOR_YELLOW = {255, 255, 0}; // Red + Green = Yellow
+static const struct led_rgb COLOR_MAGENTA= {255, 0, 255}; // Red + Blue = Magenta
+static const struct led_rgb COLOR_CYAN   = {0, 255, 255}; // Green + Blue = Cyan
+static const struct led_rgb COLOR_WHITE  = {255, 255, 255}; // All colors = White
+static const struct led_rgb COLOR_OFF    = {0, 0, 0}; // All off = Black
 
 // Layer color mapping (like zmk-rgbled-widget)
 static const struct led_rgb LAYER_COLORS[] = {
