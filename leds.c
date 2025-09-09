@@ -90,29 +90,33 @@ static struct led_rgb hsl_to_rgb(int h, int s, int l) {
     return result;
 }
 
-// RGB color definitions using HSL conversion (matching dya-dash values)
-static const struct led_rgb COLOR_RED    = {127, 0, 0};     // HSL(0, 100, 50) -> Red
-static const struct led_rgb COLOR_GREEN  = {0, 127, 0};     // HSL(120, 100, 50) -> Green  
-static const struct led_rgb COLOR_BLUE   = {0, 0, 127};     // HSL(240, 100, 50) -> Blue
-static const struct led_rgb COLOR_YELLOW = {127, 127, 0};   // HSL(60, 100, 50) -> Yellow
-static const struct led_rgb COLOR_MAGENTA= {127, 0, 127};   // HSL(300, 100, 50) -> Magenta
-static const struct led_rgb COLOR_CYAN   = {0, 127, 127};   // HSL(180, 100, 50) -> Cyan
-static const struct led_rgb COLOR_WHITE  = {255, 255, 255}; // HSL(0, 0, 100) -> White
-static const struct led_rgb COLOR_OFF    = {0, 0, 0};       // HSL(0, 0, 0) -> Black
+// Direct HSL color definitions (matching dya-dash values)
+#define HSL(h, s, l) hsl_to_rgb(h, s, l)
 
-// Layer color mapping (like zmk-rgbled-widget)
-static const struct led_rgb LAYER_COLORS[] = {
-    COLOR_OFF,      // Layer 0 (base): Off/Black
-    COLOR_RED,      // Layer 1: Red
-    COLOR_GREEN,    // Layer 2: Green
-    COLOR_YELLOW,   // Layer 3: Yellow
-    COLOR_BLUE,     // Layer 4: Blue
-    COLOR_MAGENTA,  // Layer 5: Magenta
-    COLOR_CYAN,     // Layer 6: Cyan
-    COLOR_WHITE,    // Layer 7: White
-};
+// Color definitions using HSL values like dya-dash
+#define COLOR_RED     HSL(0, 100, 50)    // Red
+#define COLOR_GREEN   HSL(120, 100, 50)  // Green  
+#define COLOR_BLUE    HSL(240, 100, 50)  // Blue
+#define COLOR_YELLOW  HSL(60, 100, 50)   // Yellow
+#define COLOR_MAGENTA HSL(300, 100, 50)  // Magenta
+#define COLOR_CYAN    HSL(180, 100, 50)  // Cyan
+#define COLOR_WHITE   HSL(0, 0, 100)     // White
+#define COLOR_OFF     HSL(0, 0, 0)       // Black/Off
 
-#define NUM_LAYER_COLORS (sizeof(LAYER_COLORS) / sizeof(LAYER_COLORS[0]))
+// Layer color mapping function
+static struct led_rgb get_layer_color(uint8_t layer) {
+    switch (layer) {
+        case 0: return COLOR_OFF;      // Layer 0 (base): Off/Black
+        case 1: return COLOR_RED;      // Layer 1: Red
+        case 2: return COLOR_GREEN;    // Layer 2: Green
+        case 3: return COLOR_YELLOW;   // Layer 3: Yellow
+        case 4: return COLOR_BLUE;     // Layer 4: Blue
+        case 5: return COLOR_MAGENTA;  // Layer 5: Magenta
+        case 6: return COLOR_CYAN;     // Layer 6: Cyan
+        case 7: return COLOR_WHITE;    // Layer 7: White
+        default: return COLOR_WHITE;   // Default: White
+    }
+}
 
 // flag to indicate whether the initial boot up sequence is complete
 static bool initialized = false;
@@ -312,12 +316,8 @@ static void indicate_startup_battery(void) {
 static void set_layer_color(uint8_t layer) {
     struct led_rgb pixels[1];
     
-    // Get color for the layer (use white if layer exceeds defined colors)
-    if (layer < NUM_LAYER_COLORS) {
-        pixels[0] = LAYER_COLORS[layer];
-    } else {
-        pixels[0] = COLOR_WHITE;
-    }
+    // Get color for the layer using HSL-based function
+    pixels[0] = get_layer_color(layer);
     
     // Set LED to the layer color
     led_strip_update_rgb(led_strip, pixels, 1);
