@@ -365,7 +365,8 @@ extern void led_init_thread(void *d0, void *d1, void *d2) {
     k_sleep(K_MSEC(2000));
 #endif // IS_ENABLED(CONFIG_ZMK_BLE)
 
-    // 3回目: 現在のレイヤー色を持続表示に設定
+#if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL) || !IS_ENABLED(CONFIG_ZMK_SPLIT)
+    // 3回目: 現在のレイヤー色を持続表示に設定 (central側のみ)
     uint8_t layer_idx = zmk_keymap_highest_layer_active();
     if (layer_idx < LENGTH(LAYER_COLORS)) {
         LOG_INF("Setting initial layer color for layer %d", layer_idx);
@@ -374,6 +375,13 @@ extern void led_init_thread(void *d0, void *d1, void *d2) {
         );
         k_msgq_put(&led_msgq, &layer_blink, K_NO_WAIT);
     }
+#else
+    // peripheral側では消灯状態を設定
+    struct blink_item layer_blink = BLINK_STRUCT_PERSISTENT(
+        STAY_ON, 1, COLOR_OFF
+    );
+    k_msgq_put(&led_msgq, &layer_blink, K_NO_WAIT);
+#endif
 
     initialized = true;
     LOG_INF("Finished initializing LED widget");
