@@ -4,6 +4,7 @@
 #include <zephyr/drivers/led_strip.h>
 #include <zephyr/kernel.h>
 #include <zephyr/init.h>
+#include <math.h>
 
 #include <zmk/ble.h>
 #include <zmk/endpoints.h>
@@ -55,17 +56,49 @@ static const struct device *led_strip = DEVICE_DT_GET(LED_STRIP_NODE_ID);
 BUILD_ASSERT(DT_NODE_EXISTS(DT_ALIAS(led_strip)),
              "An alias for led-strip is not found for SK6812 LED");
 
-// RGB color definitions for WS2812
-// led_rgb struct members: .r=Red, .g=Green, .b=Blue (always standard)
-// color-mapping only affects wire transmission order, not struct members
-static const struct led_rgb COLOR_RED    = {255, 0, 0};   // Pure red
-static const struct led_rgb COLOR_GREEN  = {0, 255, 0};   // Pure green  
-static const struct led_rgb COLOR_BLUE   = {0, 0, 255};   // Pure blue
-static const struct led_rgb COLOR_YELLOW = {255, 255, 0}; // Red + Green = Yellow
-static const struct led_rgb COLOR_MAGENTA= {255, 0, 255}; // Red + Blue = Magenta
-static const struct led_rgb COLOR_CYAN   = {0, 255, 255}; // Green + Blue = Cyan
-static const struct led_rgb COLOR_WHITE  = {255, 255, 255}; // All colors = White
-static const struct led_rgb COLOR_OFF    = {0, 0, 0}; // All off = Black
+// HSL to RGB conversion function
+static struct led_rgb hsl_to_rgb(int h, int s, int l) {
+    float hue = h / 360.0f;
+    float sat = s / 100.0f;
+    float light = l / 100.0f;
+    
+    float c = (1.0f - fabsf(2.0f * light - 1.0f)) * sat;
+    float x = c * (1.0f - fabsf(fmodf(hue * 6.0f, 2.0f) - 1.0f));
+    float m = light - c / 2.0f;
+    
+    float r_temp, g_temp, b_temp;
+    
+    if (hue < 1.0f/6.0f) {
+        r_temp = c; g_temp = x; b_temp = 0;
+    } else if (hue < 2.0f/6.0f) {
+        r_temp = x; g_temp = c; b_temp = 0;
+    } else if (hue < 3.0f/6.0f) {
+        r_temp = 0; g_temp = c; b_temp = x;
+    } else if (hue < 4.0f/6.0f) {
+        r_temp = 0; g_temp = x; b_temp = c;
+    } else if (hue < 5.0f/6.0f) {
+        r_temp = x; g_temp = 0; b_temp = c;
+    } else {
+        r_temp = c; g_temp = 0; b_temp = x;
+    }
+    
+    struct led_rgb result = {
+        .r = (uint8_t)((r_temp + m) * 255),
+        .g = (uint8_t)((g_temp + m) * 255),
+        .b = (uint8_t)((b_temp + m) * 255)
+    };
+    return result;
+}
+
+// RGB color definitions using HSL conversion (matching dya-dash values)
+static const struct led_rgb COLOR_RED    = {127, 0, 0};     // HSL(0, 100, 50) -> Red
+static const struct led_rgb COLOR_GREEN  = {0, 127, 0};     // HSL(120, 100, 50) -> Green  
+static const struct led_rgb COLOR_BLUE   = {0, 0, 127};     // HSL(240, 100, 50) -> Blue
+static const struct led_rgb COLOR_YELLOW = {127, 127, 0};   // HSL(60, 100, 50) -> Yellow
+static const struct led_rgb COLOR_MAGENTA= {127, 0, 127};   // HSL(300, 100, 50) -> Magenta
+static const struct led_rgb COLOR_CYAN   = {0, 127, 127};   // HSL(180, 100, 50) -> Cyan
+static const struct led_rgb COLOR_WHITE  = {255, 255, 255}; // HSL(0, 0, 100) -> White
+static const struct led_rgb COLOR_OFF    = {0, 0, 0};       // HSL(0, 0, 0) -> Black
 
 // Layer color mapping (like zmk-rgbled-widget)
 static const struct led_rgb LAYER_COLORS[] = {
