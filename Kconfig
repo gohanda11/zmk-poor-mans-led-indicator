@@ -24,7 +24,7 @@ config INDICATOR_LED_SHOW_BATTERY_ON_BOOT
     bool "Indicate battery level on startup with a sequence of blinks"
         default y
 
-config CONFIG_INDICATOR_LED_SHOW_CRITICAL_BATTERY_CHANGES
+config INDICATOR_LED_SHOW_CRITICAL_BATTERY_CHANGES
     bool "Blink once every time battery level changes when below critical level"
         default y
 
