@@ -332,6 +332,12 @@ static int led_layer_listener_cb(const zmk_event_t *eh) {
     uint8_t layer = zmk_keymap_highest_layer_active();
     LOG_INF("Changed to layer %d", layer);
     
+    // Skip auto-mouse layer (layer 1) - it's temporary and should not affect LED
+    if (layer == 1) {
+        LOG_INF("Skipping LED update for auto-mouse layer %d", layer);
+        return 0;
+    }
+    
     // Set constant color based on layer (like zmk-rgbled-widget)
     set_layer_color(layer);
     
@@ -394,11 +400,18 @@ extern void led_init_thread(void *d0, void *d1, void *d2) {
 
 #if IS_ENABLED(CONFIG_INDICATOR_LED_SHOW_LAYER_CHANGE)
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL) || !IS_ENABLED(CONFIG_ZMK_SPLIT)
-    // Set initial layer color (like zmk-rgbled-widget)
-    LOG_INF("Setting initial layer color");
-    set_layer_color(zmk_keymap_highest_layer_active());
+    // Set initial layer color (but skip auto-mouse layer)
+    uint8_t current_layer = zmk_keymap_highest_layer_active();
+    if (current_layer != 1) {  // Skip auto-mouse layer
+        LOG_INF("Setting initial layer %d color", current_layer);
+        set_layer_color(current_layer);
+    } else {
+        LOG_INF("Initial layer is auto-mouse (%d), setting to base layer color", current_layer);
+        set_layer_color(0);  // Show base layer color instead
+    }
 #endif
 #endif
+
 }
 
 // run init thread on boot for initial battery+output checks  
