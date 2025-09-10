@@ -331,8 +331,6 @@ static void set_layer_color(uint8_t layer) {
     LOG_INF("LED updated successfully for layer %d", layer);
 }
 
-#if IS_ENABLED(CONFIG_INDICATOR_LED_SHOW_LAYER_CHANGE)
-#if !IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 // Work queue for deferred layer color updates
 static struct k_work_delayable layer_update_work;
 
