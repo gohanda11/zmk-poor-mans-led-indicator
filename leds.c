@@ -123,10 +123,6 @@ static struct led_rgb get_layer_color(uint8_t layer) {
 // flag to indicate whether the initial boot up sequence is complete
 static bool initialized = false;
 
-// Track current layer state to detect changes (only on central or non-split)
-#if !IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
-static uint8_t current_displayed_layer = 0;
-#endif
 
 // a blink work item as specified by the blink rate
 struct blink_item {
@@ -328,33 +324,26 @@ static void set_layer_color(uint8_t layer) {
     
     // Set LED to the layer color
     led_strip_update_rgb(led_strip, pixels, 1);
-    current_displayed_layer = layer;
     LOG_INF("Set layer %d color", layer);
 }
 
-// Check for layer changes and update LED if needed
-static void check_layer_state(void) {
-    if (!initialized) {
-        return;
-    }
-    
-    uint8_t actual_layer = zmk_keymap_highest_layer_active();
-    if (actual_layer != current_displayed_layer) {
-        LOG_INF("Layer state sync: actual=%d, displayed=%d", actual_layer, current_displayed_layer);
-        set_layer_color(actual_layer);
-    }
-}
 
 static int led_layer_listener_cb(const zmk_event_t *eh) {
     if (!initialized) {
         return 0;
     }
 
-    uint8_t layer = zmk_keymap_highest_layer_active();
-    LOG_INF("Changed to layer %d", layer);
+    // Get the layer change event details
+    struct zmk_layer_state_changed *layer_event = as_zmk_layer_state_changed(eh);
+    uint8_t current_layer = zmk_keymap_highest_layer_active();
     
-    // Set constant color based on layer (like zmk-rgbled-widget)
-    set_layer_color(layer);
+    LOG_INF("Layer %d %s, current highest layer: %d", 
+            layer_event->layer, 
+            layer_event->state ? "activated" : "deactivated", 
+            current_layer);
+    
+    // Always update to current highest layer (like zmk-rgbled-widget)
+    set_layer_color(current_layer);
     
     return 0;
 }
@@ -370,24 +359,15 @@ extern void led_process_thread(void *d0, void *d1, void *d2) {
     ARG_UNUSED(d1);
     ARG_UNUSED(d2);
     while (true) {
-        // Check for blink items with timeout
+        // wait until a blink item is received and process it
         struct blink_item blink;
-        int ret = k_msgq_get(&led_msgq, &blink, K_MSEC(CONFIG_INDICATOR_LED_INTERVAL_MS));
-        
-        if (ret == 0) {
-            LOG_DBG("Got a blink item from msgq");
-            led_do_blink(blink);
-        }
+        k_msgq_get(&led_msgq, &blink, K_FOREVER);
+        LOG_DBG("Got a blink item from msgq");
 
-#if IS_ENABLED(CONFIG_INDICATOR_LED_SHOW_LAYER_CHANGE)
-#if !IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
-        // Periodically check for layer state changes (for auto-mouse timeout)
-        check_layer_state();
-#endif
-#endif
+        led_do_blink(blink);
 
-        // Brief sleep to prevent excessive CPU usage
-        k_sleep(K_MSEC(100));
+        // wait interval before processing another blink sequence
+        k_sleep(K_MSEC(CONFIG_INDICATOR_LED_INTERVAL_MS));
     }
 }
 
