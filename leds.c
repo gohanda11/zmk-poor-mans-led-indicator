@@ -331,6 +331,32 @@ static void set_layer_color(uint8_t layer) {
     LOG_INF("LED updated successfully for layer %d", layer);
 }
 
+#if IS_ENABLED(CONFIG_INDICATOR_LED_SHOW_LAYER_CHANGE)
+#if !IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
+// Work queue for deferred layer color updates
+static struct k_work_delayable layer_update_work;
+
+static void layer_update_work_handler(struct k_work *work) {
+    if (!initialized) {
+        LOG_INF("Layer work handler called but not initialized yet");
+        return;
+    }
+
+    // Get current layer status with potential delay for state stabilization
+    uint8_t current_layer = zmk_keymap_highest_layer_active();
+    
+    LOG_INF("DEFERRED LAYER UPDATE: current highest: %d", current_layer);
+    
+    // Debug: Show all active layers
+    for (int i = 0; i < 8; i++) {
+        if (zmk_keymap_layer_active(i)) {
+            LOG_INF("  Layer %d is ACTIVE", i);
+        }
+    }
+    
+    LOG_INF("Updating LED to layer %d color", current_layer);
+    set_layer_color(current_layer);
+}
 
 static int led_layer_listener_cb(const zmk_event_t *eh) {
     if (!initialized) {
@@ -341,24 +367,14 @@ static int led_layer_listener_cb(const zmk_event_t *eh) {
     // Get the layer change event details
     struct zmk_layer_state_changed *layer_event = as_zmk_layer_state_changed(eh);
     
-    // Get current layer status
-    uint8_t current_layer = zmk_keymap_highest_layer_active();
-    
-    LOG_INF("LAYER EVENT: Layer %d %s, current highest: %d", 
+    LOG_INF("LAYER EVENT: Layer %d %s", 
             layer_event->layer, 
-            layer_event->state ? "ON" : "OFF", 
-            current_layer);
+            layer_event->state ? "ON" : "OFF");
     
-    // Debug: Show all active layers
-    for (int i = 0; i < 8; i++) {
-        if (zmk_keymap_layer_active(i)) {
-            LOG_INF("  Layer %d is ACTIVE", i);
-        }
-    }
-    
-    // Always update to current highest layer
-    LOG_INF("Updating LED to layer %d color", current_layer);
-    set_layer_color(current_layer);
+    // Schedule deferred layer color update with small delay to allow state to stabilize
+    // This is crucial for auto-mouse layer timeouts where the event may fire before
+    // the layer state is fully updated
+    k_work_reschedule(&layer_update_work, K_MSEC(50));
     
     return 0;
 }
@@ -419,6 +435,8 @@ extern void led_init_thread(void *d0, void *d1, void *d2) {
 
 #if IS_ENABLED(CONFIG_INDICATOR_LED_SHOW_LAYER_CHANGE)
 #if !IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
+    // Initialize the layer update work queue
+    k_work_init_delayable(&layer_update_work, layer_update_work_handler);
     // Set initial layer color including auto-mouse layer
     uint8_t current_layer = zmk_keymap_highest_layer_active();
     LOG_INF("INIT: Current highest layer: %d", current_layer);
