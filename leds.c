@@ -103,7 +103,8 @@ static struct led_rgb hsl_to_rgb(int h, int s, int l) {
 #define COLOR_WHITE   HSL(0, 0, 100)     // White
 #define COLOR_OFF     HSL(0, 0, 0)       // Black/Off
 
-// Layer color mapping function
+// Layer color mapping function (only on central or non-split)
+#if !IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 static struct led_rgb get_layer_color(uint8_t layer) {
     switch (layer) {
         case 0: return COLOR_OFF;      // Layer 0 (base): Off/Black
@@ -117,12 +118,15 @@ static struct led_rgb get_layer_color(uint8_t layer) {
         default: return COLOR_WHITE;   // Default: White
     }
 }
+#endif
 
 // flag to indicate whether the initial boot up sequence is complete
 static bool initialized = false;
 
-// Track current layer state to detect changes
+// Track current layer state to detect changes (only on central or non-split)
+#if !IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 static uint8_t current_displayed_layer = 0;
+#endif
 
 // a blink work item as specified by the blink rate
 struct blink_item {
@@ -183,7 +187,7 @@ static void led_do_blink(struct blink_item blink) {
 static void indicate_ble(void) {
     struct blink_item blink = {};
 
-#if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL) || !IS_ENABLED(CONFIG_ZMK_SPLIT)
+#if !IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
     uint8_t profile_index = zmk_ble_active_profile_index() + 1;
     if (zmk_ble_active_profile_is_connected()) {
         LOG_INF("Profile %d connected, blinking blue", profile_index);
@@ -232,7 +236,7 @@ static int led_output_listener_cb(const zmk_event_t *eh) {
 }
 
 ZMK_LISTENER(led_output_listener, led_output_listener_cb);
-#if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL) || !IS_ENABLED(CONFIG_ZMK_SPLIT)
+#if !IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 // run led_output_listener_cb on BLE profile change (on central)
 ZMK_SUBSCRIPTION(led_output_listener, zmk_ble_active_profile_changed);
 #else
@@ -315,7 +319,7 @@ static void indicate_startup_battery(void) {
 
 
 #if IS_ENABLED(CONFIG_INDICATOR_LED_SHOW_LAYER_CHANGE)
-#if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL) || !IS_ENABLED(CONFIG_ZMK_SPLIT)
+#if !IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 static void set_layer_color(uint8_t layer) {
     struct led_rgb pixels[1];
     
@@ -376,7 +380,7 @@ extern void led_process_thread(void *d0, void *d1, void *d2) {
         }
 
 #if IS_ENABLED(CONFIG_INDICATOR_LED_SHOW_LAYER_CHANGE)
-#if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL) || !IS_ENABLED(CONFIG_ZMK_SPLIT)
+#if !IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
         // Periodically check for layer state changes (for auto-mouse timeout)
         check_layer_state();
 #endif
@@ -419,7 +423,7 @@ extern void led_init_thread(void *d0, void *d1, void *d2) {
     LOG_INF("Finished initializing LED widget");
 
 #if IS_ENABLED(CONFIG_INDICATOR_LED_SHOW_LAYER_CHANGE)
-#if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL) || !IS_ENABLED(CONFIG_ZMK_SPLIT)
+#if !IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
     // Set initial layer color including auto-mouse layer
     uint8_t current_layer = zmk_keymap_highest_layer_active();
     LOG_INF("Setting initial layer %d color", current_layer);
