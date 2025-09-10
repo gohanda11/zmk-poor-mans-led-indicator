@@ -376,8 +376,10 @@ extern void led_process_thread(void *d0, void *d1, void *d2) {
         }
 
 #if IS_ENABLED(CONFIG_INDICATOR_LED_SHOW_LAYER_CHANGE)
+#if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL) || !IS_ENABLED(CONFIG_ZMK_SPLIT)
         // Periodically check for layer state changes (for auto-mouse timeout)
         check_layer_state();
+#endif
 #endif
 
         // Brief sleep to prevent excessive CPU usage
