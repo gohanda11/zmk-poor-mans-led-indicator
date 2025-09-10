@@ -322,27 +322,42 @@ static void set_layer_color(uint8_t layer) {
     // Get color for the layer using HSL-based function
     pixels[0] = get_layer_color(layer);
     
+    LOG_INF("Setting LED: layer=%d, RGB=(%d,%d,%d)", 
+            layer, pixels[0].r, pixels[0].g, pixels[0].b);
+    
     // Set LED to the layer color
     led_strip_update_rgb(led_strip, pixels, 1);
-    LOG_INF("Set layer %d color", layer);
+    
+    LOG_INF("LED updated successfully for layer %d", layer);
 }
 
 
 static int led_layer_listener_cb(const zmk_event_t *eh) {
     if (!initialized) {
+        LOG_INF("Layer event received but not initialized yet");
         return 0;
     }
 
     // Get the layer change event details
     struct zmk_layer_state_changed *layer_event = as_zmk_layer_state_changed(eh);
+    
+    // Get current layer status
     uint8_t current_layer = zmk_keymap_highest_layer_active();
     
-    LOG_INF("Layer %d %s, current highest layer: %d", 
+    LOG_INF("LAYER EVENT: Layer %d %s, current highest: %d", 
             layer_event->layer, 
-            layer_event->state ? "activated" : "deactivated", 
+            layer_event->state ? "ON" : "OFF", 
             current_layer);
     
-    // Always update to current highest layer (like zmk-rgbled-widget)
+    // Debug: Show all active layers
+    for (int i = 0; i < 8; i++) {
+        if (zmk_keymap_layer_active(i)) {
+            LOG_INF("  Layer %d is ACTIVE", i);
+        }
+    }
+    
+    // Always update to current highest layer
+    LOG_INF("Updating LED to layer %d color", current_layer);
     set_layer_color(current_layer);
     
     return 0;
@@ -406,6 +421,15 @@ extern void led_init_thread(void *d0, void *d1, void *d2) {
 #if !IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
     // Set initial layer color including auto-mouse layer
     uint8_t current_layer = zmk_keymap_highest_layer_active();
+    LOG_INF("INIT: Current highest layer: %d", current_layer);
+    
+    // Debug: Show all active layers at startup
+    for (int i = 0; i < 8; i++) {
+        if (zmk_keymap_layer_active(i)) {
+            LOG_INF("INIT: Layer %d is ACTIVE", i);
+        }
+    }
+    
     LOG_INF("Setting initial layer %d color", current_layer);
     set_layer_color(current_layer);
 #endif
