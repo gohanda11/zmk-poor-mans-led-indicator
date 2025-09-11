@@ -392,28 +392,6 @@ static int led_layer_listener_cb(const zmk_event_t *eh) {
     set_layer_color(current_layer);
     return 0;
 }
-static int led_layer_listener_cb(const zmk_event_t *eh) {
-    if (!initialized) {
-        LOG_INF("Layer event received but not initialized yet");
-        return 0;
-    }
-    // Get the layer change event details
-    struct zmk_layer_state_changed *layer_event = as_zmk_layer_state_changed(eh);
-    
-    LOG_INF("LAYER EVENT: Layer %d %s", 
-            layer_event->layer, 
-            layer_event->state ? "ON" : "OFF");
-    
-    // Special handling for auto-mouse layer (layer 1)
-    if (layer_event->layer == 1) {
-        LOG_INF("Auto-mouse layer event detected - using extended delay");
-        // Use longer delay for auto-mouse layer transitions
-        k_work_reschedule(&layer_update_work, K_MSEC(150));
-    } else {
-        // Schedule deferred layer color update with longer delay to allow auto-mouse layer state to stabilize
-        // Auto-mouse layer transitions need more time to complete state changes
-        k_work_reschedule(&layer_update_work, K_MSEC(100));
-    }
 
 ZMK_LISTENER(led_layer_listener, led_layer_listener_cb);
 ZMK_SUBSCRIPTION(led_layer_listener, zmk_layer_state_changed);
