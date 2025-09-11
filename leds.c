@@ -379,12 +379,18 @@ static int led_layer_listener_cb(const zmk_event_t *eh) {
     }
     
     if (!any_layer_active) {
-        current_layer = 0;
+        uint8_t current_layer = 0;
         LOG_INF("No non-base layers active, forcing layer 0");
+        LOG_INF("Updating LED to layer %d color", current_layer);
+        set_layer_color(current_layer);
+        return 0;
     }
     
+    // Get the current highest layer if we reach here
+    uint8_t current_layer = zmk_keymap_highest_layer_active();
     LOG_INF("Updating LED to layer %d color", current_layer);
     set_layer_color(current_layer);
+    return 0;
 }
 static int led_layer_listener_cb(const zmk_event_t *eh) {
     if (!initialized) {
